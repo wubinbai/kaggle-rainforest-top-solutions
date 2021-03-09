@@ -1,4 +1,6 @@
 # kaggle-rainforest-top-solutions
+# TL, DL: Please check the file combined_pdf_rfcx.pdf, everything is in this pdf file. You are free to print and read; it is a pdf with 209 pages.
+
 ALL IN ONE kaggle-rainforest-top-solutions in either a .txt or .pdf format
 Inspired by and thanks to Kamal Das @ Kaggle: https://www.kaggle.com/c/rfcx-species-audio-detection/discussion/220339#1213962
 Almost everything has come from the above link.
