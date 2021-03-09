@@ -1,0 +1,85 @@
+42
+
+It was a great competition. I'll document our journey primarily from my perspective, my teammates @jpison @amezet @pavelgonchar may chime in to add extra color…
+
+Our solution is rank ensemble of two types of models, primarily 97% using the architecture described below, and 3% an ensemble of SED models. The architecture below was made in the last 7 days… I made my first (pretty bad) sub 8 days ago, and I joined team just before team merge deadline and all the ideas were done/implemented in ~7 days…
+
+A single 5-fold model achieves 0.961 private, 0.956 public; details:
+
+Input representation. This is probably the key, we take each TP or FP and after spectrogram (not MEL, b/c MEL was intended to model human audition and the rainforrest species have not evolved like our human audition) crop it time and frequency wise with fixed size on a per-class basis. E.g. for class 0: minimum freq is 5906.25 Hz and max is 8250 Hz, and time-wise we take the longest of time length of TPs, i.e. for class 0: 1.29s.
+
+With the above sample the spectrogram to yield an image, e.g.:
+
+The GT for that TP would be:
+
+tensor([nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, 1., nan, nan, nan,nan, nan, nan, nan, nan, nan, nan, nan]))
+
+As other competitors, we expand the classes from 24 to 26 b/c to split species that have two songs.
+
+Other sample:
+
+tensor([nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, nan, 1., nan, nan, nan, nan, nan,nan, nan, nan, nan, nan, nan, nan, nan]))
+
+Note the image size is the same, so time and frequency are effectively strectched wrt to what the net will see, but I believe this is fine as long as the net has enough receptive field (which they have).
+
+The reason of doing it this way is that we need to inject the time and frequency restrictions as inductive bias somehow, and this looks like an nice way.
+
+Model architecture. This is just an image classifier outputing 26 logits, that's it. The only whistle is to add relative positional information in the freq axis (à la coordconv), so model is embarrasingly simple:
+
+class TropicModel(Module):
+    def __init__(self):
+        self.trunk = timm.create_model(a.arch,pretrained=True,num_classes=n_species,in_chans=1+a.coord)
+        self.do = nn.Dropout2d(a.do)
+    def forward(self,x):
+        bs,_,freq_bins,time_bins = x.size()
+        coord = torch.linspace(-1,1,freq_bins,dtype=x.dtype,device=x.device).view(1,1,-1,1).expand(bs,1,-1,time_bins)
+        if a.coord: x = torch.cat((x,coord),dim=1)
+        x = self.do(x)
+        return self.trunk(x)
+
+Loss function. Just masked Focal loss. Actually this was a mistake b/c Focal loss was a renmant of a dead test and I (accidentally) left it there, where I thought (until I checked code now to write writeup) that BCE was being used. Since we are doing balancing BCE should work better.
+
+Mixover. Inspired by mixup, mixover takes a bunch of (unbalanced) TP and FPs (which strictly speaking are TNs) and creates combinations of them so that the resulting labels can be supervised (1+NaN=1, 0+NaN=NaN,0+0=0) making sure linear interpolation is not destructive (beta,alpha=4; clip to 0.2,0.8); then it samples from the resulted mixed items computing class distribution so that resulting samples are balanced. Code is a bit tricky, but still:
+
+class MixOver(MixHandler):
+    "Inspired by implementation of https://arxiv.org/abs/1710.09412"
+    def __init__(self, alpha=): super().__init__(alpha)
+    def before_batch(self):
+        ny_dims,nx_dims = len(self.y.size()),len(self.x.size())
+        bs=find_bs(self.xb)
+        all_combinations = L(itertools.combinations(range(find_bs(self.xb)), 2))
+        lam = self.distrib.sample((len(all_combinations),)).squeeze().to(self.x.device).clip(0.2,0.8)
+        lam = torch.stack([lam, 1-lam], 1)
+        self.lam = lam.max(1)[0]
+        comb = all_combinations
+        yb0,yb1 = L(self.yb).itemgot(comb.itemgot(0))[0],L(self.yb).itemgot(comb.itemgot(1))[0]
+        yb_one = torch.full_like(yb0,np.nan)
+        yb_one[yb0>0.5] = yb0[yb0>0.5]
+        yb_one[yb1>0.5] = yb1[yb1>0.5]
+        yb_two = torch.clip(yb0+yb1,0,1.)
+        yb_com = yb_one.clone()
+        yb_com[~torch.isnan(yb_two)] = yb_two[~torch.isnan(yb_two)]
+        n_ones_or_zeros=(~torch.isnan(yb_com)).sum()
+        ones=torch.sum(yb_com>=0.5,dim=1)
+        zeros=torch.sum(yb_com<0.5,dim=1)
+        p_ones = (n_ones_or_zeros/(2*( ones.sum())))/ones
+        p_zeros= (n_ones_or_zeros/(2*(zeros.sum())))/zeros
+        p_zeros[torch.isinf(p_zeros)],p_ones[torch.isinf(p_ones)]=0,0
+        p=(p_ones+p_zeros).cpu().numpy()/(p_ones+p_zeros).sum().item()
+        shuffle=torch.from_numpy(np.random.choice(yb_com.size(0),size=bs,replace=True,p=p)).to(self.x.device)
+        comb = all_combinations[shuffle]
+        xb0,xb1 = tuple(L(self.xb).itemgot(comb.itemgot(0))),tuple(L(self.xb).itemgot(comb.itemgot(1)))
+        self.learn.xb = tuple(L(xb0,xb1).map_zip(torch.lerp,weight=unsqueeze(self.lam[shuffle], n=nx_dims-1)))
+        self.learn.yb = (yb_com[shuffle],)
+
+Augmentations. Time jitter (10% of time length), white noise (3 dB).
+
+External data. We used Xeno Canto A-M and N-Z recording and since they have 264 species we made the wild assumption that if we have 24 species and they have 10X randomly sampling would give you a "right" label (TN) 90% of the time… the goal was to add jungle/rainforest diversity at the expense of a small noisy labels which were accounted for labeling these weak labels as 0.1 (vs 0).
+
+Pseudolabeling. We also pseudolabeled using OOF models the non labeled parts of training data to mine more TPs, and manually balanced the resulting pseudo-label TPs.
+
+Code. Pytorch, Fastai.
+
+Final thoughts. It was a very fun competition and I am very glad of achieving a gold medal with a very short time, I want to thank Kaggle, sponsor and competitors for the competition and discussions; and of course my teammates @jpison @amezet @pavelgonchar for inviting me giving me the small nudge I needed to join 😉
+
+Edit: I've added no hand labels to the title because this competition was VERY unique in that Kaggle effectively allowed hand labeling and that's very unusual. (Re: hand labeling vs external data, it was also very uncommon not having to disclose which external data you used during competition).

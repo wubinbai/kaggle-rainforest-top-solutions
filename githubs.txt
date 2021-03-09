@@ -1,0 +1,7 @@
+top5: https://github.com/kuto5046/kaggle-rainforest
+top10: (https://github.com/zhanghang1989/ResNeSt) 
+top21: https://github.com/MPGek/mpgek-rfcx-species-audio-detection-public
+top23: https://github.com/dathudeptrai/rfcx-kaggle
+top27: https://github.com/mnpinto/dl_pipeline
+
+

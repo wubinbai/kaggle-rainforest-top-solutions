@@ -1,0 +1,9 @@
+top9: https://www.kaggle.com/cdeotte/rainforest-post-process-lb-0-970
+
+https://www.kaggle.com/mehrankazeminia/lb-0-980-rainforest-comparative-method-part-a
+
+top38: 
+    https://www.kaggle.com/ashusma/training-rfcx-tensorflow-tpu-effnet-b2 - that was a great starter and I was just doing edits of that kernel to move on
+    https://www.kaggle.com/aikhmelnytskyy/resnet-tpu-on-colab-and-kaggle - that showed how you can train on colab as well
+
+
