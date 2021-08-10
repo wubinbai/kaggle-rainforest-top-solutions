@@ -1,0 +1,40 @@
+1 how to get segment-wise prediction?
+
+Idea is simple: 2D CNN feature extractor -> (batch_size, channels, frequency, time) -> aggregate only in the frequency axis, preserve time information: Weakly supervised: PANNs (https://github.com/qiuqiangkong/audioset_tagging_cnn/)pretrained with AudioSet (https://research.google.com/audioset/)(the ImageNet counterpart in audio) # [PANNs paper](https://arxiv.org/abs/1912.10211)
+
+2 codes' misc:
+
+catalyst==20.11 will work.
+fastprogress==0.2.7 will work.
+
+functions: 
+seed_everything
+get_logger
+timer
+init_layer
+init_bn
+interpolate
+pad_framewise_output
+get_model
+prediction_for_clip
+prediction
+
+
+Class:
+DFTBase
+STFT
+Spectrogram
+LogmelFilterbank
+DropStripes
+SpecAugmentation
+ConvBlock
+AttnBlock
+PANNsCNN14Att
+PANNsDataset
+PANNsLoss
+F1Callback
+mAPCallback
+
+
+
+
